@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ContextWeave</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div>
+        <h1>ContextWeave</h1>
+        <p class="tag">Decisions that know when their evidence changed</p>
+      </div>
+      <span id="nano-chip" class="chip">Nano: checking…</span>
+    </header>
+
+    <section class="actions" aria-label="Capture">
+      <button id="btn-save" class="primary">Save evidence <small>Gemini Nano · on-device</small></button>
+      <button id="btn-save-manual">Save selection <small>manual · no AI</small></button>
+      <button id="btn-recheck">Re-check this page</button>
+    </section>
+
+    <div id="toast" role="status" aria-live="polite" hidden></div>
+
+    <section aria-label="Decisions">
+      <h2>Decisions</h2>
+      <form id="decision-form" class="card">
+        <input name="question" placeholder="Question, e.g. Which provider for ingestion?" required />
+        <input name="selection" placeholder="Choice, e.g. Provider A" required />
+        <input name="rationale" placeholder="Rationale (optional)" />
+        <button type="submit">Create decision</button>
+      </form>
+      <div id="decisions"></div>
+    </section>
+
+    <section aria-label="Evidence">
+      <h2>Evidence vault</h2>
+      <input id="search" type="search" placeholder="Search evidence and decisions (offline)" />
+      <div id="claims"></div>
+    </section>
+
+    <details id="diagnostics">
+      <summary>Diagnostics</summary>
+      <dl id="diag-list"></dl>
+      <label>App Check debug token (stored locally, never bundled)
+        <input id="debug-token" type="password" autocomplete="off" />
+      </label>
+      <button id="btn-save-token" type="button">Save token &amp; reload</button>
+    </details>
+
+    <dialog id="consent">
+      <h3>Send to Gemini in the cloud?</h3>
+      <p>Only the JSON below leaves this device. No page snapshots or browsing history are included.</p>
+      <pre id="consent-payload"></pre>
+      <div class="row">
+        <button id="consent-cancel" type="button">Cancel</button>
+        <button id="consent-send" type="button" class="primary">Send selected excerpts to cloud</button>
+      </div>
+    </dialog>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

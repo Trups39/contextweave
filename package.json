@@ -1,0 +1,13 @@
+{
+  "name": "contextweave",
+  "private": true,
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "workspaces": ["packages/*", "apps/extension"],
+  "scripts": {
+    "test": "npm run test -w @contextweave/core",
+    "typecheck": "npm run typecheck -w @contextweave/core && npm run typecheck -w @contextweave/extension",
+    "build": "npm run build -w @contextweave/extension",
+    "check": "npm run typecheck && npm test && npm run build"
+  }
+}

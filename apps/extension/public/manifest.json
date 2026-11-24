@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "ContextWeave AI",
+  "short_name": "ContextWeave",
+  "version": "0.1.0",
+  "description": "Decision-aware research memory: verified quotes, versioned sources, and decisions that know when their evidence changed.",
+  "minimum_chrome_version": "139",
+  "action": { "default_title": "Open ContextWeave" },
+  "side_panel": { "default_path": "sidepanel/index.html" },
+  "background": { "service_worker": "background.js", "type": "module" },
+  "permissions": ["sidePanel", "activeTab", "scripting", "storage"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

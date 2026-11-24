@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Provider A API — Rate limits (fictional demo)</title>
+  <link rel="canonical" href="/docs/" />
+  <style>
+    body { font: 16px/1.6 system-ui, sans-serif; margin: 0; color: #1d1d1f; background: #fafaf8; }
+    .demo { background: #fff4d6; border-bottom: 1px solid #e8d9a8; padding: 10px 24px; font-size: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .demo button { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid #c9b57a; background: #fff; cursor: pointer; }
+    .demo button[aria-pressed="true"] { background: #2f5bd3; color: #fff; border-color: #2f5bd3; }
+    main { max-width: 720px; margin: 0 auto; padding: 24px; }
+    code { background: #eee; padding: 1px 4px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <!-- Demo controls sit outside <main>; the extension captures <main> only. -->
+  <div class="demo" role="region" aria-label="Demo controls">
+    <strong>Demo:</strong> update documentation
+    <button data-v="v1">v1 · 1,000</button>
+    <button data-v="v2">v2 · 300</button>
+    <button data-v="v2b">v2 + unrelated edit</button>
+    <button data-v="v3">v3 · 500</button>
+    <span>Fictional provider. Same URL; version is stored in this browser only.</span>
+  </div>
+
+  <main>
+    <h1>Provider A API</h1>
+    <p>Provider A is a fictional ingestion API used to demonstrate ContextWeave. It is not a real service.</p>
+
+    <h2>Rate limits</h2>
+    <p id="limit"></p>
+    <p>Bursts are smoothed over a 10-second window. Exceeding the limit returns HTTP <code>429</code>.</p>
+
+    <h2>Authentication</h2>
+    <p>Requests are authenticated with a project API key sent in the <code>Authorization</code> header.</p>
+
+    <h2>About this page</h2>
+    <p id="updated"></p>
+  </main>
+
+  <script>
+    const VERSIONS = {
+      v1:  { limit: '1,000', updated: 'Last updated: November 1, 2026.' },
+      v2:  { limit: '300',   updated: 'Last updated: November 20, 2026.' },
+      v2b: { limit: '300',   updated: 'Last updated: November 22, 2026. Typo fixes in the authentication section.' },
+      v3:  { limit: '500',   updated: 'Last updated: November 28, 2026.' },
+    };
+    const KEY = 'cw-demo-version';
+    function current() {
+      try { return VERSIONS[localStorage.getItem(KEY)] ? localStorage.getItem(KEY) : 'v1'; } catch { return 'v1'; }
+    }
+    function show(v) {
+      const d = VERSIONS[v];
+      document.getElementById('limit').textContent = `Provider A rate limit is ${d.limit} requests/minute.`;
+      document.getElementById('updated').textContent = d.updated;
+      for (const b of document.querySelectorAll('[data-v]')) b.setAttribute('aria-pressed', String(b.dataset.v === v));
+    }
+    for (const b of document.querySelectorAll('[data-v]')) {
+      b.addEventListener('click', () => {
+        try { localStorage.setItem(KEY, b.dataset.v); } catch {}
+        location.reload(); // a real reload, like a docs site deploying a new version
+      });
+    }
+    show(current());
+  </script>
+</body>
+</html>

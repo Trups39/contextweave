@@ -1,0 +1,7 @@
+{
+  "hosting": {
+    "public": "apps/fixture/public",
+    "cleanUrls": true,
+    "headers": [{ "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }]
+  }
+}
