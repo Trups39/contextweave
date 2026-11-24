@@ -168,10 +168,47 @@ export class ContextWeaveService {
     }
     if (decision.status === 'RETIRED') return err('ILLEGAL_TRANSITION', 'Retired decisions cannot gain evidence.');
     if (decision.supportingClaimIds.includes(claimId)) return ok(decision);
-    await this.vault.edges.put({ id: this.id(), decisionId, claimId, state: 'NOT_CHECKED' });
+    await this.ensureEdge(decisionId, claimId, await this.vault.edges.listByDecision(decisionId));
     const updated: Decision = { ...decision, supportingClaimIds: [...decision.supportingClaimIds, claimId], updatedAt: this.now() };
     await this.vault.decisions.put(updated);
     return ok(updated);
+  }
+
+  /** Creates the edge, or re-activates one a revision removed earlier. */
+  private async ensureEdge(decisionId: string, claimId: string, edges: SupportEdge[]): Promise<void> {
+    const existing = edges.find((e) => e.claimId === claimId);
+    if (!existing) {
+      await this.vault.edges.put({ id: this.id(), decisionId, claimId, state: 'NOT_CHECKED' });
+    } else if (existing.removedAt) {
+      const { removedAt: _removed, ...active } = existing;
+      await this.vault.edges.put(active);
+    }
+  }
+
+  /**
+   * Turns the current source sentence of a TEXT_CHANGED event into a new
+   * claim, e.g. so a revision can rest on "300 requests/minute". The text is
+   * re-verified against the stored snapshot, never taken from the event alone.
+   */
+  async adoptCurrentExcerpt(changeEventId: string): Promise<Result<Claim>> {
+    const event = await this.vault.changes.get(changeEventId);
+    if (!event) return err('NOT_FOUND', `Change event ${changeEventId} not found.`);
+    if (event.currentExcerpt === undefined) return err('INVALID_INPUT', 'This change has no single current sentence to adopt.');
+    const [snapshot, old] = await Promise.all([this.vault.snapshots.get(event.newSnapshotId), this.vault.claims.get(event.claimId)]);
+    if (!snapshot || !old) return err('NOT_FOUND', 'Source snapshot or original claim is missing.');
+    const existing = (await this.vault.claims.listByPage(snapshot.pageId))
+      .find((c) => c.snapshotId === snapshot.id && c.exactQuote === event.currentExcerpt);
+    if (existing) return ok(existing);
+    const v = verifyQuote(snapshot.cleanText, event.currentExcerpt);
+    if (!v.match) return err('UNVERIFIED_CLAIM', 'Current sentence is not in the stored snapshot.');
+    const claim: Claim = {
+      id: this.id(), snapshotId: snapshot.id, pageId: snapshot.pageId,
+      exactQuote: event.currentExcerpt, summary: event.currentExcerpt,
+      ...deriveAnchors(event.currentExcerpt, snapshot.cleanText, v.match.start, snapshot.sections),
+      verification: v.status, captureMethod: 'MANUAL', createdAt: this.now(),
+    };
+    await this.vault.claims.put(claim);
+    return ok(claim);
   }
 
   // ---------------- Journey B: re-check ----------------
@@ -192,7 +229,7 @@ export class ContextWeaveService {
     const claims = (await this.vault.claims.listByPage(page.id)).filter((c) => isVerified(c.verification));
 
     for (const claim of claims) {
-      const edges = await this.vault.edges.listByClaim(claim.id);
+      const edges = (await this.vault.edges.listByClaim(claim.id)).filter((e) => !e.removedAt);
       if (edges.length === 0) continue; // only evidence that supports a decision is tracked
       const outcome = classifyRecheck(claim, snapshot);
       const state = edgeStateFor(outcome.observedDiff);
@@ -246,12 +283,12 @@ export class ContextWeaveService {
     if (!r.ok) return r;
     const decision = (await this.vault.decisions.get(decisionId))!;
     if (cmd.type === 'REVISE' && cmd.supportingClaimIds) {
+      const keep = new Set(cmd.supportingClaimIds);
       const edges = await this.vault.edges.listByDecision(decisionId);
-      for (const id of cmd.supportingClaimIds) {
-        if (!edges.some((e) => e.claimId === id)) {
-          await this.vault.edges.put({ id: this.id(), decisionId, claimId: id, state: 'NOT_CHECKED' });
-        }
+      for (const e of edges) {
+        if (!keep.has(e.claimId) && !e.removedAt) await this.vault.edges.put({ ...e, removedAt: this.now() });
       }
+      for (const id of keep) await this.ensureEdge(decisionId, id, edges);
     }
     return ok(decision);
   }
@@ -283,6 +320,7 @@ export class ContextWeaveService {
     if (!decision) return err('NOT_FOUND', `Decision ${decisionId} not found.`);
     const evidence: DecisionView['evidence'] = [];
     for (const edge of await this.vault.edges.listByDecision(decisionId)) {
+      if (edge.removedAt) continue;
       const claim = await this.vault.claims.get(edge.claimId);
       if (!claim) continue;
       const latestEvent = latest(await this.vault.changes.listByClaim(claim.id));

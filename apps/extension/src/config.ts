@@ -13,6 +13,6 @@ export const config = {
     appId: env.VITE_FIREBASE_APP_ID ?? '',
   },
   /** Must be a model enabled for your Firebase AI Logic backend; verify before demoing. */
-  cloudModel: env.VITE_CLOUD_MODEL || 'gemini-2.5-flash',
+  cloudModel: env.VITE_CLOUD_MODEL || 'gemini-3.8-flash',
   demoUrl: env.VITE_DEMO_URL ?? '',
 };

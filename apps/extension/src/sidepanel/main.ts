@@ -3,7 +3,7 @@ import {
   type ChangeEvent, type Claim, type ClaimExtractor, type DecisionView, type InferenceSource, type Result,
 } from '@contextweave/core';
 import { openVault } from '../adapters/idbVault.ts';
-import { captureActiveTab, ensureHostAccess } from '../adapters/pageCapture.ts';
+import { captureActiveTab, rememberSite } from '../adapters/pageCapture.ts';
 import { DEBUG_TOKEN_KEY, initFirebase } from '../adapters/firebase.ts';
 import { GeminiCloudReviewer, GeminiNanoExtractor, nanoAvailability, warmUpNano } from '../adapters/geminiStrategies.ts';
 import { config } from '../config.ts';
@@ -24,6 +24,7 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Record<string, 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const chip = (text: string, tone: string) => h('span', { class: `chip ${tone}` }, text);
 const time = (t: number) => new Date(t).toLocaleString();
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 // ---------- composition root ----------
 const vault = await openVault();
@@ -58,11 +59,11 @@ function report<T>(r: Result<T>): r is { ok: true; value: T } {
 
 // ---------- capture actions ----------
 async function save(extractor: ClaimExtractor) {
-  // Permission prompt must happen inside the click's user activation, before other awaits.
-  if (!(await ensureHostAccess())) return toast('ContextWeave needs page access to read the page you click Save on.', true);
   await busy(async () => {
     const raw = await captureActiveTab();
     if (!report(raw)) return;
+    // Still inside the click's user activation: offer to remember this one site.
+    await rememberSite(raw.value.url);
     if (extractor.method === 'MANUAL' && !raw.value.selection) {
       return toast('Highlight a sentence on the page first, then click Save selection.', true);
     }
@@ -74,23 +75,23 @@ async function save(extractor: ClaimExtractor) {
     const verified = claims.filter((c) => isVerified(c.verification)).length;
     toast(claims.length === 0
       ? 'Nothing new to save from this page.'
-      : `Saved ${claims.length} claim(s), ${verified} verified${inferenceSource ? ` · ${inferenceSource} · ${latencyMs} ms` : ' · manual'}.`);
+      : `Saved ${plural(claims.length, 'claim', 'claims')}, ${verified} verified${inferenceSource ? ` · ${inferenceSource} · ${latencyMs} ms` : ' · manual'}.`);
     await render();
   });
 }
 
 async function recheck() {
-  if (!(await ensureHostAccess())) return toast('ContextWeave needs page access to re-check this page.', true);
   await busy(async () => {
     const raw = await captureActiveTab();
     if (!report(raw)) return;
+    await rememberSite(raw.value.url);
     const r = await service.recheck(raw.value);
     if (!report(r)) return;
     const { items, flaggedDecisionIds, snapshotReused } = r.value;
     const changed = items.filter((i) => i.outcome.observedDiff !== 'UNCHANGED').length;
     toast(flaggedDecisionIds.length > 0
-      ? `${flaggedDecisionIds.length} decision(s) need review: ${changed} supporting quote(s) changed.`
-      : `${items.length} linked quote(s) checked${snapshotReused ? ' (page unchanged)' : ''}. No new review needed.`);
+      ? `${plural(flaggedDecisionIds.length, 'decision needs', 'decisions need')} review: ${plural(changed, 'supporting quote', 'supporting quotes')} changed.`
+      : `${plural(items.length, 'linked quote', 'linked quotes')} checked${snapshotReused ? ' (page unchanged)' : ''}. No new review needed.`);
     await render();
   });
 }
@@ -166,7 +167,7 @@ function decisionCard(v: DecisionView) {
     btn('Keep', async () => { if (report(await service.resolve(d.id, { type: 'KEEP' }))) await render(); }, true);
   }
   if (d.status !== 'RETIRED') {
-    btn('Revise…', async () => { card.append(reviseForm(d.id, d.selection, d.rationale)); });
+    btn('Revise…', async () => { card.append(reviseForm(v)); });
     btn('Retire', async () => { if (report(await service.resolve(d.id, { type: 'RETIRE' }))) await render(); });
     if (v.evidence.length > 0) btn('Cloud review…', () => openConsent(d.id));
   }
@@ -181,17 +182,41 @@ function decisionCard(v: DecisionView) {
   return card;
 }
 
-function reviseForm(decisionId: string, selection: string, rationale?: string) {
+function reviseForm(v: DecisionView) {
+  const d = v.decision;
+  // Offer to rest the revision on the current source sentence(s) instead of the outdated ones.
+  const adoptable = v.pendingEvents.filter((e) => e.currentExcerpt !== undefined);
   const form = h('form', { class: 'card' },
-    h('input', { name: 'selection', value: selection, required: '' }),
-    h('input', { name: 'rationale', value: rationale ?? '', placeholder: 'Updated rationale' }),
-    h('button', { type: 'submit', class: 'primary' }, 'Save revision'));
+    h('input', { name: 'selection', value: d.selection, required: '' }),
+    h('input', { name: 'rationale', value: d.rationale ?? '', placeholder: 'Updated rationale' }));
+  if (adoptable.length > 0) {
+    form.append(h('label', { class: 'row meta' },
+      h('input', { type: 'checkbox', name: 'adopt', checked: '', style: 'width:auto' }),
+      `Use the current source text as evidence (${adoptable.map((e) => `“${e.currentExcerpt}”`).join(', ')})`));
+  }
+  form.append(h('button', { type: 'submit', class: 'primary' }, 'Save revision'));
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
     const f = new FormData(form);
     void busy(async () => {
-      const r = await service.resolve(decisionId, { type: 'REVISE', selection: String(f.get('selection')), rationale: String(f.get('rationale')) });
-      if (report(r)) { toast('Decision revised; previous version kept in history.'); await render(); }
+      let supportingClaimIds: string[] | undefined;
+      if (f.get('adopt')) {
+        const replaced = new Set(adoptable.map((e) => e.claimId));
+        supportingClaimIds = d.supportingClaimIds.filter((id) => !replaced.has(id));
+        for (const e of adoptable) {
+          const c = await service.adoptCurrentExcerpt(e.id);
+          if (!report(c)) return;
+          supportingClaimIds.push(c.value.id);
+        }
+      }
+      const r = await service.resolve(d.id, {
+        type: 'REVISE', selection: String(f.get('selection')), rationale: String(f.get('rationale')),
+        ...(supportingClaimIds ? { supportingClaimIds } : {}),
+      });
+      if (report(r)) {
+        toast(supportingClaimIds ? 'Decision revised and now linked to the current source text.' : 'Decision revised; previous version kept in history.');
+        await render();
+      }
     });
   });
   return form;
@@ -218,11 +243,17 @@ function claimCard(c: Claim, decisions: DecisionView[]) {
   return card;
 }
 
+let firstRender = true;
 async function render() {
   const decisions: DecisionView[] = [];
   for (const d of (await vault.decisions.list()).sort((a, b) => b.updatedAt - a.updatedAt)) {
     const v = await service.getDecisionView(d.id);
     if (v.ok) decisions.push(v.value);
+  }
+  if (firstRender) {
+    // Show the form straight away only when there is nothing else to look at.
+    $<HTMLDetailsElement>('new-decision').open = decisions.length === 0;
+    firstRender = false;
   }
   const dBox = $('decisions');
   dBox.replaceChildren(...(decisions.length ? decisions.map(decisionCard) : [h('p', { class: 'empty' }, 'No decisions yet.')]));
@@ -292,7 +323,12 @@ $<HTMLFormElement>('decision-form').addEventListener('submit', (ev) => {
     const r = await service.createDecision({
       question: String(f.get('question')), selection: String(f.get('selection')), rationale: String(f.get('rationale') ?? ''),
     });
-    if (report(r)) { form.reset(); toast('Decision created. Link verified evidence to it below.'); await render(); }
+    if (report(r)) {
+      form.reset();
+      $<HTMLDetailsElement>('new-decision').open = false;
+      toast('Decision created. Link verified evidence to it from the vault below.');
+      await render();
+    }
   });
 });
 $('btn-save-token').addEventListener('click', async () => {

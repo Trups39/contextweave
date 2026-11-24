@@ -81,6 +81,8 @@ export interface SupportEdge {
   lastCheckedAt?: number;
   /** Fingerprint the user last acknowledged (KEEP/REVISE). See recheck/fingerprint.ts. */
   reviewedFingerprint?: string;
+  /** Set when a revision drops this claim. Kept (not deleted) so history stays reconstructable. */
+  removedAt?: number;
 }
 
 export interface ChangeEvent {

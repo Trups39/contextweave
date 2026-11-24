@@ -180,3 +180,30 @@ describe('search', () => {
     expect(URL_DOCS).toContain('docs');
   });
 });
+
+describe('revise onto the current source sentence', () => {
+  it('adopts the v2 sentence as verified evidence and drops the old edge from tracking', async () => {
+    const { service, vault, decision, claim } = await savedDecision();
+    await service.recheck(docs('300'));
+    const event = unwrap(await service.getDecisionView(decision.id)).pendingEvents[0]!;
+    const adopted = unwrap(await service.adoptCurrentExcerpt(event.id));
+    expect(adopted).toMatchObject({ exactQuote: 'Provider A rate limit is 300 requests/minute.', verification: 'VERIFIED_EXACT', anchorPrefix: 'Provider A rate limit is' });
+    expect(unwrap(await service.adoptCurrentExcerpt(event.id)).id).toBe(adopted.id); // idempotent
+
+    unwrap(await service.resolve(decision.id, { type: 'REVISE', selection: 'Provider B', supportingClaimIds: [adopted.id] }));
+    const view = unwrap(await service.getDecisionView(decision.id));
+    expect(view.evidence.map((e) => e.claim.id)).toEqual([adopted.id]);
+    expect((await vault.edges.listByClaim(claim.id))[0]!.removedAt).toBeDefined();
+
+    // The old 1,000 claim no longer flags anything; the adopted 300 claim does when it changes.
+    const r = unwrap(await service.recheck(docs('500')));
+    expect(r.items.map((i) => i.claim.id)).toEqual([adopted.id]);
+    expect(r.flaggedDecisionIds).toEqual([decision.id]);
+  });
+
+  it('refuses to adopt when there is no single current sentence', async () => {
+    const { service } = setup();
+    const r = await service.adoptCurrentExcerpt('nope');
+    expect(!r.ok && r.error.code).toBe('NOT_FOUND');
+  });
+});

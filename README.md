@@ -27,7 +27,7 @@ packages/core/          Pure TypeScript domain + application logic (no Chrome, n
   src/app/              ContextWeaveService use cases, search, cloud payload
   src/ports.ts          Repository / infrastructure / strategy interfaces
   src/testing/          In-memory vault, fixed clock, sequential ids
-  test/                 Vitest suites (57 tests)
+  test/                 Vitest suites (59 tests)
 apps/extension/         Chrome MV3 side panel (adapters + thin UI)
   src/adapters/         IndexedDB vault, page capture, Firebase init + App Check, Gemini strategies
   src/sidepanel/        UI
@@ -66,11 +66,12 @@ Deploy the demo page: `firebase deploy --only hosting` (copy `.firebaserc.exampl
 
 | Area | State |
 |---|---|
-| Core rules, state machine, re-check, anchors, idempotency | Implemented; 57 unit tests pass |
+| Core rules, state machine, re-check, anchors, idempotency | Implemented; 59 unit tests pass |
 | Extension build (MV3, bundled, no remote code) | Builds |
-| Real Gemini Nano response in the extension (`ON_DEVICE`) | **Not yet verified on hardware**; this is the day-1 gate |
-| App Check debug token from the extension origin | **Not yet verified** |
-| Hosted demo page | Ready to deploy; not deployed |
+| Real Gemini Nano response in the extension (`ON_DEVICE`) | Verified on Chrome 158 (Windows) |
+| App Check debug token from the extension origin | Verified (cloud request accepted) |
+| Cloud review (`IN_CLOUD`) | Wired with retries; awaiting a run without model overload |
+| Hosted demo page | Deployed to Firebase Hosting |
 | Revisit reminder (FR-18, P1) | Deferred: needs the `tabs` permission, which conflicts with the privacy stance |
 
 ## License

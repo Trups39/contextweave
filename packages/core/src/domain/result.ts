@@ -13,7 +13,8 @@ export type DomainErrorCode =
   | 'MODEL_UNAVAILABLE'
   | 'MODEL_OUTPUT_INVALID'
   | 'CONSENT_REQUIRED'
-  | 'URL_MISMATCH';
+  | 'URL_MISMATCH'
+  | 'PERMISSION_NEEDED';
 
 export interface DomainError {
   code: DomainErrorCode;

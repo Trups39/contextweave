@@ -25,12 +25,15 @@
 
     <section aria-label="Decisions">
       <h2>Decisions</h2>
+      <details id="new-decision">
+      <summary class="new-decision">+ New decision</summary>
       <form id="decision-form" class="card">
         <input name="question" placeholder="Question, e.g. Which provider for ingestion?" required />
         <input name="selection" placeholder="Choice, e.g. Provider A" required />
         <input name="rationale" placeholder="Rationale (optional)" />
         <button type="submit">Create decision</button>
       </form>
+      </details>
       <div id="decisions"></div>
     </section>
 

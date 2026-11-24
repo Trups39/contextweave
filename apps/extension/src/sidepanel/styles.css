@@ -40,3 +40,5 @@ dialog { border: 1px solid var(--line); border-radius: 12px; background: var(--c
 pre { max-height: 50vh; overflow: auto; font-size: 11px; background: var(--bg); padding: 8px; border-radius: 6px; white-space: pre-wrap; }
 .review { white-space: pre-wrap; border-left: 3px solid var(--cloud); padding-left: 8px; }
 .empty { color: var(--muted); font-style: italic; }
+#new-decision { margin: 0 0 8px; }
+.new-decision { color: var(--accent); font-weight: 600; margin-bottom: 6px; }

@@ -67,22 +67,36 @@ export async function warmUpNano(): Promise<void> {
   } catch { /* availability is reported by diagnostics */ }
 }
 
+/** Transient cloud failures worth retrying: overload, unavailable, rate limit. */
+const TRANSIENT = /\[(429|500|503)\b|high demand|overloaded|unavailable/i;
+const RETRY_DELAYS_MS = [1_500, 4_000];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /** Cloud strategy: ONLY_IN_CLOUD, called solely after explicit consent (see service.cloudReview). */
 export class GeminiCloudReviewer implements CloudReviewer {
   async review(payloadJson: string) {
     const fb = await initFirebase();
     if (!('ai' in fb)) return err<never>('MODEL_UNAVAILABLE', fb.status.problem ?? 'Firebase is not configured.');
     const model = getGenerativeModel(fb.ai, { mode: InferenceMode.ONLY_IN_CLOUD, inCloudParams: { model: config.cloudModel } });
+    const prompt = `You review research decisions. Follow "instruction" in this JSON exactly.\n${payloadJson}`;
     const started = performance.now();
-    try {
-      const res = await model.generateContent(
-        `You review research decisions. Follow "instruction" in this JSON exactly.\n${payloadJson}`,
-      );
-      const source = mapSource(res.response.inferenceSource);
-      return ok({ text: res.response.text(), latencyMs: Math.round(performance.now() - started), ...(source ? { inferenceSource: source } : {}) });
-    } catch (e) {
-      return err<never>('MODEL_UNAVAILABLE', `Cloud review failed: ${(e as Error).message}`);
+    let lastError = '';
+    // The same consented payload is re-sent; nothing new leaves the device on retry.
+    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+      try {
+        const res = await model.generateContent(prompt);
+        const source = mapSource(res.response.inferenceSource);
+        return ok({ text: res.response.text(), latencyMs: Math.round(performance.now() - started), ...(source ? { inferenceSource: source } : {}) });
+      } catch (e) {
+        lastError = (e as Error).message;
+        if (!TRANSIENT.test(lastError) || attempt === RETRY_DELAYS_MS.length) break;
+        await sleep(RETRY_DELAYS_MS[attempt]!);
+      }
     }
+    const friendly = TRANSIENT.test(lastError)
+      ? 'Gemini in the cloud is busy right now. Your decision is unchanged; try Cloud review again in a minute.'
+      : `Cloud review failed: ${lastError}`;
+    return err<never>('MODEL_UNAVAILABLE', friendly);
   }
 }
 
